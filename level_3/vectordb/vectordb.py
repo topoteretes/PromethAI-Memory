@@ -60,16 +60,24 @@ import langchain.embeddings
 class WeaviateVectorDB(VectorDB):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.init_weaviate(embeddings= self.embeddings, namespace = self.namespace)
+        self._init_weaviate(embeddings= self.embeddings, namespace = self.namespace)
 
-    def init_weaviate(self, embeddings =OpenAIEmbeddings() , namespace: str=None):
+    def _init_weaviate(self, embeddings =OpenAIEmbeddings() , namespace: str=None):
+        # Weaviate initialization logic
+        # embeddings = OpenAIEmbeddings()
+        self.client = self._init_weaviate_client()
+        self.retriever = self._init_weaviate_retriever(embeddings=embeddings, namespace=namespace)
+    
+    def _init_weaviate_retriever(self, embeddings =OpenAIEmbeddings() , namespace: str=None):
         # Weaviate initialization logic
         # embeddings = OpenAIEmbeddings()
         auth_config = weaviate.auth.AuthApiKey(
             api_key=os.environ.get("WEAVIATE_API_KEY")
         )
-        self.client = self.init_weaviate_client()
         
+        if self.client is None:
+            raise Exception("Weaviate client not initialized")
+
         self.retriever = WeaviateHybridSearchRetriever(
             client=self.client,
             index_name=namespace,
@@ -78,8 +86,9 @@ class WeaviateVectorDB(VectorDB):
             embedding=embeddings,
             create_schema_if_missing=True,
         )
+        return self.retriever
 
-    def init_weaviate_client(self):
+    def _init_weaviate_client(self):
         # Weaviate client initialization logic
         auth_config = weaviate.auth.AuthApiKey(
             api_key=os.environ.get("WEAVIATE_API_KEY")
