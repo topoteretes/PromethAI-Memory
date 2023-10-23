@@ -68,22 +68,18 @@ class WeaviateVectorDB(VectorDB):
         auth_config = weaviate.auth.AuthApiKey(
             api_key=os.environ.get("WEAVIATE_API_KEY")
         )
-        client = weaviate.Client(
-            url=os.environ.get("WEAVIATE_URL"),
-            auth_client_secret=auth_config,
-            additional_headers={"X-OpenAI-Api-Key": os.environ.get("OPENAI_API_KEY")},
-        )
-        retriever = WeaviateHybridSearchRetriever(
-            client=client,
+        self.client = self.init_weaviate_client()
+        
+        self.retriever = WeaviateHybridSearchRetriever(
+            client=self.client,
             index_name=namespace,
             text_key="text",
             attributes=[],
             embedding=embeddings,
             create_schema_if_missing=True,
         )
-        return retriever  # If this is part of the initialization, call it here.
 
-    def init_weaviate_client(self, namespace: str):
+    def init_weaviate_client(self):
         # Weaviate client initialization logic
         auth_config = weaviate.auth.AuthApiKey(
             api_key=os.environ.get("WEAVIATE_API_KEY")
@@ -118,7 +114,7 @@ class WeaviateVectorDB(VectorDB):
         # Update Weaviate memories here
         if namespace is None:
             namespace = self.namespace
-        retriever = self.init_weaviate(embeddings=embeddings,namespace = namespace)
+    
         if loader_settings:
             # Assuming _document_loader returns a list of documents
             documents = await _document_loader(observation, loader_settings)
@@ -127,13 +123,13 @@ class WeaviateVectorDB(VectorDB):
                 document_to_load = self._stuct(doc.page_content, params, metadata_schema_class)
 
                 logging.info("Loading document with provided loader settings %s", str(document_to_load))
-                retriever.add_documents([
+                self.retriever.add_documents([
             Document(metadata=document_to_load[0]['metadata'], page_content=document_to_load[0]['page_content'])])
         else:
             document_to_load = self._stuct(observation, params, metadata_schema_class)
 
             logging.info("Loading document with defautl loader settings %s", str(document_to_load))
-            retriever.add_documents([
+            self.retriever.add_documents([
             Document(metadata=document_to_load[0]['metadata'], page_content=document_to_load[0]['page_content'])])
 
     async def fetch_memories(self, observation: str, namespace: str = None, search_type: str = 'hybrid', **kwargs):
@@ -152,7 +148,7 @@ class WeaviateVectorDB(VectorDB):
         Example:
             fetch_memories(query="some query", search_type='text', additional_param='value')
         """
-        client = self.init_weaviate_client(self.namespace)
+        
         if search_type is None:
             search_type = 'hybrid'
 
@@ -176,8 +172,8 @@ class WeaviateVectorDB(VectorDB):
                 for prop in class_obj["properties"]
             ]
 
-        base_query = client.query.get(
-            namespace, list(list_objects_of_class(namespace, client.schema.get()))
+        base_query = self.client.query.get(
+            namespace, list(list_objects_of_class(namespace, self.client.schema.get()))
         ).with_additional(
             ["id", "creationTimeUnix", "lastUpdateTimeUnix", "score", 'distance']
         ).with_where(params_user_id).with_limit(10)
@@ -236,14 +232,14 @@ class WeaviateVectorDB(VectorDB):
     async def delete_memories(self, namespace:str, params: dict = None):
         if namespace is None:
             namespace = self.namespace
-        client = self.init_weaviate_client(self.namespace)
+        
         if params:
             where_filter = {
                 "path": ["id"],
                 "operator": "Equal",
                 "valueText": params.get("id", None),
             }
-            return client.batch.delete_objects(
+            return self.client.batch.delete_objects(
                 class_name=self.namespace,
                 # Same `where` filter as in the GraphQL API
                 where=where_filter,
@@ -251,7 +247,7 @@ class WeaviateVectorDB(VectorDB):
         else:
             # Delete all objects
             print("HERE IS THE USER ID", self.user_id)
-            return client.batch.delete_objects(
+            return self.client.batch.delete_objects(
                 class_name=namespace,
                 where={
                     "path": ["version"],
@@ -261,9 +257,8 @@ class WeaviateVectorDB(VectorDB):
             )
 
     def update_memories(self, observation, namespace: str, params: dict = None):
-        client = self.init_weaviate_client(self.namespace)
-
-        client.data_object.update(
+        
+        self.client.data_object.update(
             data_object={
                 # "text": observation,
                 "user_id": str(self.user_id),
